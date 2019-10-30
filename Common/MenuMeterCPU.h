@@ -31,6 +31,8 @@
 #define kCPUPercentDisplayBorderWidth		2
 #define kCPUThermometerDisplayWidth			10
 #define kCPUDisplayMultiProcGapWidth		5
+#define kCPUThermometerOnlyDisplayWidth     6
+#define kCPUThermometerOnlyStrokeWidth      0.5f
 #define kCPUTemperatureDisplayWidth         33
 
 // Menu item indexes

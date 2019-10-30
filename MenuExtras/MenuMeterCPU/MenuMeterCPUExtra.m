@@ -35,7 +35,7 @@
 - (void)renderHistoryGraphIntoImage:(NSImage *)image forProcessor:(uint32_t)processor atOffset:(float)offset;
 - (void)renderSinglePercentIntoImage:(NSImage *)image forProcessor:(uint32_t)processor atOffset:(float)offset;
 - (void)renderSplitPercentIntoImage:(NSImage *)image forProcessor:(uint32_t)processor atOffset:(float)offset;
-- (void)renderThermometerIntoImage:(NSImage *)image forProcessor:(uint32_t)processor atOffset:(float)offset;
+- (void)renderThermometerIntoImage:(NSImage *)image forProcessor:(uint32_t)processor atOffset:(float)offset withFrame:(BOOL) frame;
 - (void)renderHorizontalThermometerIntoImage:(NSImage *)image forProcessor:(uint32_t)processor atX:(float)x andY:(float)y withWidth:(float)width andHeight:(float)height;
 
 // Timer callbacks
@@ -283,8 +283,15 @@
         }
     }
     else {
-		// Loop by processor
-		int cpuDisplayModePrefs = [ourPrefs cpuDisplayMode];
+        int cpuDisplayModePrefs = [ourPrefs cpuDisplayMode];
+
+        // If displaying thermometer only, leave off the frame for each bar and just draw a frame around all of them
+        BOOL thermometerOnly = cpuDisplayModePrefs == kCPUDisplayThermometer;
+        float thermometerTotalHeight = (float)[currentImage size].height - 3.0f;
+        float barWidth = thermometerOnly ? kCPUThermometerOnlyDisplayWidth : kCPUThermometerDisplayWidth;
+        NSBezierPath *framePath = [NSBezierPath bezierPathWithRect:NSMakeRect(renderOffset, 1.5f, barWidth * cpuCount, thermometerTotalHeight)];
+
+        // Loop by processor
 		for (uint32_t cpuNum = 0; cpuNum < cpuCount; cpuNum++) {
 			
 			// Render graph if needed
@@ -303,15 +310,27 @@
 				renderOffset += percentWidth;
 			}
 			if (cpuDisplayModePrefs & kCPUDisplayThermometer) {
-				[self renderThermometerIntoImage:currentImage forProcessor:cpuNum atOffset:renderOffset];
-				renderOffset += kCPUThermometerDisplayWidth;
+				[self renderThermometerIntoImage:currentImage forProcessor:cpuNum atOffset:renderOffset withFrame:!thermometerOnly];
+                renderOffset += barWidth;
 			}
 			// At end of each proc adjust spacing
-			renderOffset += kCPUDisplayMultiProcGapWidth;
+            if (!thermometerOnly) {
+                renderOffset += kCPUDisplayMultiProcGapWidth;
+            }
 
 			// If we're averaging all we're done on first iteration
 			if ([ourPrefs cpuAvgAllProcs]) break;
 		}
+        
+        if (thermometerOnly) {
+            // Put a frame around it
+            [currentImage lockFocus];
+            [fgMenuThemeColor set];
+            [framePath setLineWidth:kCPUThermometerOnlyStrokeWidth];
+            [framePath stroke];
+            [[NSColor blackColor] set];
+            [currentImage unlockFocus];
+        }
     }
 
 	// Send it back for the view to render
@@ -559,7 +578,7 @@
 } // renderSingleTemperatureIntoImage:atOffset:
 
 
-- (void)renderThermometerIntoImage:(NSImage *)image forProcessor:(uint32_t)processor atOffset:(float)offset {
+- (void)renderThermometerIntoImage:(NSImage *)image forProcessor:(uint32_t)processor atOffset:(float)offset withFrame:(BOOL) frame {
 
     double system, user;
     [self getCPULoadForCPU:processor returnSystem:&system returnUser:&user];
@@ -569,11 +588,13 @@
 
 	// Paths
 	float thermometerTotalHeight = (float)[image size].height - 3.0f;
-	NSBezierPath *userPath = [NSBezierPath bezierPathWithRect:NSMakeRect(offset + 1.5f, 1.5f, kCPUThermometerDisplayWidth - 3,
+    float barGap = frame ? 1.5f : 0.8;
+    float barWidth = frame ? kCPUThermometerDisplayWidth : kCPUThermometerOnlyDisplayWidth;
+	NSBezierPath *userPath = [NSBezierPath bezierPathWithRect:NSMakeRect(offset + barGap, barGap, barWidth - (2 * barGap),
 																		 thermometerTotalHeight * ((user + system) > 1 ? 1 : (user + system)))];
-	NSBezierPath *systemPath = [NSBezierPath bezierPathWithRect:NSMakeRect(offset + 1.5f, 1.5f, kCPUThermometerDisplayWidth - 3,
+	NSBezierPath *systemPath = [NSBezierPath bezierPathWithRect:NSMakeRect(offset + barGap, barGap, barWidth - (2 * barGap),
 																		  thermometerTotalHeight * system)];
-	NSBezierPath *framePath = [NSBezierPath bezierPathWithRect:NSMakeRect(offset + 1.5f, 1.5f, kCPUThermometerDisplayWidth - 3, thermometerTotalHeight)];
+    NSBezierPath *framePath = [NSBezierPath bezierPathWithRect:NSMakeRect(offset + barGap, barGap, barWidth - (2 * barGap), thermometerTotalHeight)];
 
 	// Draw
 	[image lockFocus];
@@ -582,7 +603,9 @@
 	[systemColor set];
 	[systemPath fill];
 	[fgMenuThemeColor set];
-	[framePath stroke];
+    if (frame) {
+        [framePath stroke];
+    }
 
 	// Reset
 	[[NSColor blackColor] set];
@@ -842,9 +865,14 @@
             menuWidth += (([ourPrefs cpuAvgAllProcs] ? 1 : numberOfCPUs) * [ourPrefs cpuGraphLength]);
         }
         if ([ourPrefs cpuDisplayMode] & kCPUDisplayThermometer) {
-            menuWidth += (([ourPrefs cpuAvgAllProcs] ? 1 : numberOfCPUs) * kCPUThermometerDisplayWidth);
+            // Thermometer only
+            if ([ourPrefs cpuDisplayMode] == kCPUDisplayThermometer) {
+                menuWidth += (([ourPrefs cpuAvgAllProcs] ? 1 : numberOfCPUs) * kCPUThermometerOnlyDisplayWidth);
+            } else {
+                menuWidth += (([ourPrefs cpuAvgAllProcs] ? 1 : numberOfCPUs) * kCPUThermometerDisplayWidth);
+            }
         }
-        if (![ourPrefs cpuAvgAllProcs] && (numberOfCPUs > 1)) {
+        if (![ourPrefs cpuAvgAllProcs] && (numberOfCPUs > 1) && [ourPrefs cpuDisplayMode] != kCPUDisplayThermometer) {
             menuWidth += ((numberOfCPUs - 1) * kCPUDisplayMultiProcGapWidth);
         }
     }
